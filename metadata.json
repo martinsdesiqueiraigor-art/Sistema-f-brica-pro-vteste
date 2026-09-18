@@ -1,0 +1,6 @@
+{
+  "name": "Sistema Fábrica PRO",
+  "description": "Sistema de gestão de produção industrial (PCP), ordens de produção (OP), ordens de serviço (OS), roteiro de fabricação, BoM, centros de trabalho e estoque.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
