@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, Search, Sun, Moon, Bell, HelpCircle, ShieldCheck } from 'lucide-react';
+import { Menu, Search, Sun, Moon, Bell, HelpCircle, ShieldCheck, AlertTriangle, Play } from 'lucide-react';
 import { UsuarioApp } from '../types';
 
 interface Props {
@@ -13,6 +13,7 @@ interface Props {
   onAbrirNotificacoes: () => void;
   onAbrirAjuda: () => void;
   onNavegar: (pagina: string) => void;
+  paradasAtivasCount?: number;
 }
 
 export const Topbar: React.FC<Props> = ({
@@ -26,6 +27,7 @@ export const Topbar: React.FC<Props> = ({
   onAbrirNotificacoes,
   onAbrirAjuda,
   onNavegar,
+  paradasAtivasCount = 0,
 }) => {
   return (
     <header
@@ -55,7 +57,7 @@ export const Topbar: React.FC<Props> = ({
             <span className="bg-amber-600 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-sm tracking-wider uppercase shadow-xs">
               PRO
             </span>
-            <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">v5.1</span>
+            <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">MES & PCP</span>
           </div>
         </div>
 
@@ -73,12 +75,35 @@ export const Topbar: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Direita: Status de Licença + Tema + Notificações + Usuário */}
+      {/* Direita: Status de Licença + Alertas de Parada + Tema + Notificações + Usuário */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Badge Licença PRO Permanente (sem trava de trial) */}
-        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-950/60 border border-emerald-500/40 rounded-full text-[11px] font-semibold text-emerald-400">
-          <ShieldCheck className="w-3.5 h-3.5" />
-          <span>Licença PRO Ativa</span>
+        {/* Alerta de Parada Ativa se houver */}
+        {paradasAtivasCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => onNavegar('terminal-operador')}
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-red-950/80 border border-red-500/60 rounded-full text-[11px] font-bold text-red-400 animate-pulse cursor-pointer hover:bg-red-900/80"
+            title={`${paradasAtivasCount} máquina(s) parada(s). Clique para ver.`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+            <span>{paradasAtivasCount} Máquina(s) Parada(s)</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onNavegar('terminal-operador')}
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-950/60 border border-emerald-500/40 rounded-full text-[11px] font-semibold text-emerald-400 hover:bg-emerald-900/50 cursor-pointer"
+            title="Ir para o Terminal do Operador"
+          >
+            <Play className="w-3 h-3 fill-current" />
+            <span>Chão de Fábrica Ativo</span>
+          </button>
+        )}
+
+        {/* Badge Licença PRO */}
+        <div className="hidden lg:flex items-center gap-1.5 px-2 py-1 bg-slate-800/80 border border-slate-700 rounded-full text-[11px] font-semibold text-slate-300">
+          <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
+          <span>PRO Empresarial</span>
         </div>
 
         {/* Alternar Tema */}

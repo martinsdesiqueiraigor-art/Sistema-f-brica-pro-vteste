@@ -11,6 +11,8 @@ interface Props {
   onEditarOrdem: (ordem: OrdemProducao) => void;
   onExcluirOrdem: (id: string) => void;
   onVerRoteiroProduto: (produtoNome: string) => void;
+  onConsultarOP?: (id: string) => void;
+  onApontarTerminal?: (id: string) => void;
 }
 
 export const ProducaoView: React.FC<Props> = ({
@@ -22,6 +24,8 @@ export const ProducaoView: React.FC<Props> = ({
   onEditarOrdem,
   onExcluirOrdem,
   onVerRoteiroProduto,
+  onConsultarOP,
+  onApontarTerminal,
 }) => {
   const [filtroStatus, setFiltroStatus] = useState<string>('todos');
   const [busca, setBusca] = useState('');
@@ -145,11 +149,21 @@ export const ProducaoView: React.FC<Props> = ({
 
                 <div className="flex items-center gap-2 self-start sm:self-auto">
                   {getStatusBadge(ordem.status)}
+                  {onConsultarOP && (
+                    <button
+                      type="button"
+                      onClick={() => onConsultarOP(ordem.id)}
+                      title="Ver Ficha e Rastreabilidade desta OP"
+                      className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    >
+                      <Search className="w-4 h-4" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => onVerRoteiroProduto(ordem.produto)}
                     title="Ver Roteiro de Fabricação deste Produto"
-                    className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                   >
                     <GitBranch className="w-4 h-4" />
                   </button>
@@ -157,7 +171,7 @@ export const ProducaoView: React.FC<Props> = ({
                     type="button"
                     onClick={() => onEditarOrdem(ordem)}
                     title="Editar Ordem"
-                    className="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    className="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                   >
                     <Edit3 className="w-4 h-4" />
                   </button>
@@ -165,7 +179,7 @@ export const ProducaoView: React.FC<Props> = ({
                     type="button"
                     onClick={() => onExcluirOrdem(ordem.id)}
                     title="Excluir Ordem"
-                    className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

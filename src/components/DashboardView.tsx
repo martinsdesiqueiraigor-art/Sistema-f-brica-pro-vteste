@@ -11,14 +11,27 @@ import {
   TrendingUp,
   AlertTriangle,
   ArrowUpRight,
+  Flame,
+  ShieldAlert,
+  Play,
+  Search,
 } from 'lucide-react';
-import { OrdemProducao, CentroTrabalho, LogAuditoria, MaterialEstoque } from '../types';
+import {
+  OrdemProducao,
+  CentroTrabalho,
+  LogAuditoria,
+  MaterialEstoque,
+  ApontamentoMES,
+  ParadaMaquina,
+} from '../types';
 
 interface Props {
   ordens: OrdemProducao[];
   centros: CentroTrabalho[];
   materiais: MaterialEstoque[];
   auditLog: LogAuditoria[];
+  apontamentos?: ApontamentoMES[];
+  paradas?: ParadaMaquina[];
   onAbrirNovaOrdem: () => void;
   onExportarPDF: () => void;
   onAtualizar: () => void;
@@ -30,6 +43,8 @@ export const DashboardView: React.FC<Props> = ({
   centros,
   materiais,
   auditLog,
+  apontamentos = [],
+  paradas = [],
   onAbrirNovaOrdem,
   onExportarPDF,
   onAtualizar,
@@ -41,8 +56,33 @@ export const DashboardView: React.FC<Props> = ({
   const pendentes = ordens.filter((o) => o.status === 'pendente').length;
   const total = ordens.length;
 
-  const centrosAtivos = centros.filter((c) => (c.status || 'ativo') === 'ativo').length;
+  const paradasAtivas = paradas.filter((p) => p.status === 'Ativa');
+  const centrosParados = centros.filter(
+    (c) => c.status === 'parado' || paradasAtivas.some((p) => p.codigoMaquina === c.codigo)
+  ).length;
+  const centrosAtivos = centros.length - centrosParados;
+
   const materiaisBaixos = materiais.filter((m) => m.quantidade <= m.minimo);
+
+  // Cálculo do OEE real com base em dados de chão de fábrica
+  const apontamentosConcluidos = apontamentos.filter((a) => a.status === 'Concluido' && a.qtdBoas !== null);
+  const totalPecasBoas = apontamentosConcluidos.reduce((acc, a) => acc + (a.qtdBoas || 0), 0);
+  const totalRefugo = apontamentosConcluidos.reduce((acc, a) => acc + (a.refugo || 0), 0);
+
+  // Qualidade = Boas / Total
+  const taxaQualidade =
+    totalPecasBoas + totalRefugo > 0
+      ? Math.round((totalPecasBoas / (totalPecasBoas + totalRefugo)) * 100)
+      : 98;
+
+  // Disponibilidade = 100 - proporção de máquinas paradas
+  const taxaDisponibilidade = centros.length > 0 ? Math.round(((centros.length - centrosParados) / centros.length) * 100) : 95;
+
+  // Performance média dos centros
+  const taxaPerformance = centros.length > 0 ? Math.round(centros.reduce((acc, c) => acc + (c.eficiencia || 90), 0) / centros.length) : 92;
+
+  // OEE = Disp * Perf * Qual
+  const oeeGeral = Math.round((taxaDisponibilidade * taxaPerformance * taxaQualidade) / 10000);
 
   // Status breakdown percentages
   const statusStats = [
@@ -61,31 +101,47 @@ export const DashboardView: React.FC<Props> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <span>📊</span> Dashboard Geral PCP
-            <span className="text-xs px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 font-medium">
-              Chão de Fábrica
+            <span>🏭</span> Dashboard Integrado PCP & MES
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 text-white font-bold shadow-xs">
+              Chão de Fábrica ao Vivo
             </span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Visão consolidada de produção, centros de usinagem e ordens em tempo real
+            Planejamento, roteiros de usinagem, apontamentos de operadores e telemetria de postos de trabalho
           </p>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
+            type="button"
+            onClick={() => onNavegar('terminal-operador')}
+            className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Terminal Operador</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavegar('consulta-op')}
+            className="px-3.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>Consultar OP</span>
+          </button>
+          <button
             id="btnDashboardExportarPDF"
             type="button"
             onClick={onExportarPDF}
-            className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5"
+            className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <FileDown className="w-4 h-4 text-slate-500" />
-            <span>Exportar PDF</span>
+            <span>PDF</span>
           </button>
           <button
             id="btnDashboardAtualizar"
             type="button"
             onClick={onAtualizar}
-            className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             title="Atualizar dados"
           >
             <RefreshCw className="w-4 h-4" />
@@ -94,13 +150,32 @@ export const DashboardView: React.FC<Props> = ({
             id="btnDashboardNovaOrdem"
             type="button"
             onClick={onAbrirNovaOrdem}
-            className="px-4 py-1.5 rounded-lg bg-slate-800 dark:bg-amber-600 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-1.5"
+            className="px-4 py-1.5 rounded-lg bg-slate-900 dark:bg-amber-600 hover:bg-slate-800 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>+ Nova Ordem (OP)</span>
+            <span>+ Nova OP</span>
           </button>
         </div>
       </div>
+
+      {/* Alerta de Parada Ativa no Chão de Fábrica (Andon) */}
+      {paradasAtivas.length > 0 && (
+        <div className="p-3.5 bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 rounded-xl flex items-center justify-between gap-3 text-xs text-red-900 dark:text-red-200 animate-pulse">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" />
+            <span>
+              <strong>🚨 Alerta Chão de Fábrica:</strong> {paradasAtivas.length} máquina(s) com parada ativa ({paradasAtivas.map(p => `${p.codigoMaquina} - ${p.motivo}`).join(', ')}).
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavegar('terminal-operador')}
+            className="font-bold underline hover:text-red-700 dark:hover:text-red-300 cursor-pointer shrink-0"
+          >
+            Ver Terminal Operador →
+          </button>
+        </div>
+      )}
 
       {/* Alerta de Estoque Mínimo (se houver) */}
       {materiaisBaixos.length > 0 && (
@@ -120,62 +195,68 @@ export const DashboardView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Grid de 4 Cards de KPI */}
+      {/* Grid de Cards de KPI: OEE Real + OPs + Máquinas */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Em Andamento */}
+        {/* Card 1: OEE Geral da Fábrica */}
         <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-semibold">Em Andamento</span>
+            <span className="text-xs font-semibold">OEE Global (MES)</span>
+            <Flame className="w-4 h-4 text-amber-500" />
+          </div>
+          <div className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1.5 flex items-baseline gap-2">
+            <span>{oeeGeral}%</span>
+            <span className="text-[11px] font-semibold text-emerald-600">Meta: 85%</span>
+          </div>
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+            Disp: {taxaDisponibilidade}% • Perf: {taxaPerformance}% • Qual: {taxaQualidade}%
+          </div>
+        </div>
+
+        {/* Card 2: Em Andamento */}
+        <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-semibold">OPs em Andamento</span>
             <Activity className="w-4 h-4 text-amber-600" />
           </div>
           <div className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1.5">
-            {emAndamento} <span className="text-xs font-normal text-slate-400">OPs</span>
+            {emAndamento} <span className="text-xs font-normal text-slate-400">OPs ativas</span>
           </div>
           <div className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 mt-1">
             <TrendingUp className="w-3 h-3" />
-            <span>Na linha de montagem e teste</span>
+            <span>{apontamentos.filter(a => a.status === 'Ativo').length} apontamentos operando</span>
           </div>
         </div>
 
-        {/* Card 2: Concluídas */}
+        {/* Card 3: Postos de Trabalho & Máquinas */}
         <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-semibold">Concluídas</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1.5">
-            {concluidas} <span className="text-xs font-normal text-slate-400">peças</span>
-          </div>
-          <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
-            100% inspecionadas e liberadas
-          </div>
-        </div>
-
-        {/* Card 3: Centros de Trabalho */}
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-semibold">Centros de Usinagem</span>
+            <span className="text-xs font-semibold">Postos Operacionais</span>
             <Wrench className="w-4 h-4 text-blue-600" />
           </div>
           <div className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1.5">
-            {centrosAtivos} <span className="text-xs font-normal text-slate-400">ativos</span>
+            {centrosAtivos} / {centros.length}{' '}
+            <span className="text-xs font-normal text-slate-400">ativos</span>
           </div>
-          <div className="text-[11px] text-blue-600 dark:text-blue-400 mt-1">
-            Capacidade média ~93%
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+            {centrosParados > 0 ? (
+              <span className="text-red-500 font-bold">⚠️ {centrosParados} posto(s) parado(s)</span>
+            ) : (
+              <span className="text-emerald-500">✅ Todos postos disponíveis</span>
+            )}
           </div>
         </div>
 
-        {/* Card 4: Total de Ordens */}
+        {/* Card 4: Concluídas */}
         <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-            <span className="text-xs font-semibold">Total Ordens (OP)</span>
-            <Package className="w-4 h-4 text-purple-600" />
+            <span className="text-xs font-semibold">Total OPs Concluídas</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1.5">
-            {total} <span className="text-xs font-normal text-slate-400">registradas</span>
+            {concluidas} <span className="text-xs font-normal text-slate-400">de {total}</span>
           </div>
-          <div className="text-[11px] text-purple-600 dark:text-purple-400 mt-1">
-            {planejadas} planejadas / aguardando
+          <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
+            {totalPecasBoas} peças aprovadas no chão
           </div>
         </div>
       </div>
@@ -188,7 +269,7 @@ export const DashboardView: React.FC<Props> = ({
             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
               📊 Distribuição de Ordens por Status
             </h3>
-            <span className="text-xs text-slate-400 font-mono">Total: {total}</span>
+            <span className="text-xs text-slate-400 font-mono">Total: {total} OPs</span>
           </div>
 
           <div className="space-y-3">
@@ -214,7 +295,7 @@ export const DashboardView: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Produção Diária (Simulada / Histórico recente) */}
+        {/* Produção Diária */}
         <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -226,11 +307,10 @@ export const DashboardView: React.FC<Props> = ({
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Média de peças entregues e testadas por turno de trabalho
+              Média de cilindros montados e testados por turno de trabalho
             </p>
           </div>
 
-          {/* Gráfico de barras estilizado com Tailwind */}
           <div className="pt-6 pb-2">
             <div className="flex items-end justify-between gap-2 h-36">
               {[8, 12, 10, 15, 14, 6, concluidas || 9].map((val, idx) => {
@@ -268,11 +348,11 @@ export const DashboardView: React.FC<Props> = ({
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
               <Clock className="w-4 h-4 text-amber-600" />
-              Ordens de Produção Ativas
+              <span>Ordens de Produção Ativas no Chão</span>
             </h3>
             <button
               onClick={() => onNavegar('producao')}
-              className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline"
+              className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
             >
               Ver todas ({ordens.length}) →
             </button>
@@ -294,7 +374,7 @@ export const DashboardView: React.FC<Props> = ({
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
                     <span>{o.quantidade} un</span>
                     <span>•</span>
-                    <span>Op: {o.operador}</span>
+                    <span>Resp: {o.operador}</span>
                     {o.etapaAtual && (
                       <>
                         <span>•</span>
@@ -322,11 +402,11 @@ export const DashboardView: React.FC<Props> = ({
         <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-              📜 Atividades Recentes
+              📜 Atividades e Apontamentos Recentes
             </h3>
             <button
               onClick={() => onNavegar('historico')}
-              className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline"
+              className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
             >
               Auditoria →
             </button>

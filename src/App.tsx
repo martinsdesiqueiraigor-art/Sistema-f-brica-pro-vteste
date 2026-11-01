@@ -11,6 +11,10 @@ import {
   LogAuditoria,
   UsuarioApp,
   StatusOrdem,
+  OperadorMES,
+  ApontamentoMES,
+  ParadaMaquina,
+  EtapaExecucaoOP,
 } from './types';
 import {
   PRODUTOS_INICIAIS,
@@ -22,6 +26,9 @@ import {
   INSPECOES_INICIAIS,
   MATERIAIS_INICIAIS,
   AUDIT_INICIAL,
+  OPERADORES_INICIAIS,
+  APONTAMENTOS_INICIAIS,
+  PARADAS_INICIAIS,
 } from './data/initialData';
 import {
   exportProducaoPDF,
@@ -44,6 +51,10 @@ import { QualidadeView } from './components/QualidadeView';
 import { EstoqueView } from './components/EstoqueView';
 import { HistoricoView } from './components/HistoricoView';
 import { ConfigView } from './components/ConfigView';
+
+// Novos componentes fundidos do MES (App 2)
+import { TerminalOperadorView } from './components/TerminalOperadorView';
+import { ConsultaOPView } from './components/ConsultaOPView';
 
 // Modais
 import { ModalNovaOrdem } from './components/modals/ModalNovaOrdem';
@@ -71,10 +82,10 @@ interface NotificacaoItem {
   tipo: 'success' | 'warning' | 'error';
 }
 
-const STORAGE_KEY = 'fabrica_pro_dados_v51';
+const STORAGE_KEY = 'fabrica_pro_dados_v60';
 
 export default function App() {
-  // Estado de Dados
+  // Estado de Dados PCP & Engenharia
   const [produtos, setProdutos] = useState<Produto[]>(() => {
     try {
       const saved = safeStorage.getItem(STORAGE_KEY);
@@ -194,7 +205,51 @@ export default function App() {
     return AUDIT_INICIAL;
   });
 
-  // Usuário Atual & Navegação
+  // Novos Estados Fundidos do MES (App 2)
+  const [operadores, setOperadores] = useState<OperadorMES[]>(() => {
+    try {
+      const saved = safeStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed.operadores)) return parsed.operadores;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return OPERADORES_INICIAIS;
+  });
+
+  const [operadorAtivo, setOperadorAtivo] = useState<OperadorMES>(() => {
+    return operadores[0] || OPERADORES_INICIAIS[0];
+  });
+
+  const [apontamentos, setApontamentos] = useState<ApontamentoMES[]>(() => {
+    try {
+      const saved = safeStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed.apontamentos)) return parsed.apontamentos;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return APONTAMENTOS_INICIAIS;
+  });
+
+  const [paradas, setParadas] = useState<ParadaMaquina[]>(() => {
+    try {
+      const saved = safeStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed.paradas)) return parsed.paradas;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return PARADAS_INICIAIS;
+  });
+
+  // Usuário de Login & Sessão
   const [usuario, setUsuario] = useState<UsuarioApp>({
     username: 'admin',
     name: 'Administrador PCP',
@@ -259,14 +314,29 @@ export default function App() {
         inspecoes,
         materiais,
         auditLog,
+        operadores,
+        apontamentos,
+        paradas,
       };
       safeStorage.setItem(STORAGE_KEY, JSON.stringify(dados));
-      // Garante que o trial fique marcado como permanentemente ativado
       safeStorage.setItem('fabrica_ativado', 'true');
     } catch (e) {
       console.error('Erro ao salvar dados:', e);
     }
-  }, [produtos, ordens, ordensServico, roteiros, boms, centros, inspecoes, materiais, auditLog]);
+  }, [
+    produtos,
+    ordens,
+    ordensServico,
+    roteiros,
+    boms,
+    centros,
+    inspecoes,
+    materiais,
+    auditLog,
+    operadores,
+    apontamentos,
+    paradas,
+  ]);
 
   // Aplicar tema escuro/claro no elemento HTML
   useEffect(() => {
@@ -279,7 +349,7 @@ export default function App() {
     }
   }, [temaEscuro]);
 
-  // Função auxiliar de notificação Toast
+  // Notificação Toast
   const addNotificacao = (mensagem: string, tipo: 'success' | 'warning' | 'error' = 'success') => {
     const id = Date.now() + Math.random();
     setNotificacoes((prev) => [...prev, { id, mensagem, tipo }]);
@@ -288,7 +358,7 @@ export default function App() {
     }, 4000);
   };
 
-  // Adicionar registro de auditoria
+  // Registro de Auditoria
   const registrarAuditoria = (acao: string, detalhes: string) => {
     const novoLog: LogAuditoria = {
       id: Date.now(),
@@ -301,10 +371,239 @@ export default function App() {
   };
 
   // ============================================
-  // CRUDS E MANIPULADORES
+  // FUNÇÕES MES CHÃO DE FÁBRICA (FUSÃO APP 2)
   // ============================================
 
-  // 1. Ordens de Produção (OP)
+  // 1. Iniciar Produção em uma Máquina (MES)
+  const handleIniciarProducao = (numOp: string, numeroEtapa: number, codigoMaquina: string) => {
+    // Checar se a máquina está parada
+    const maquinaParada = paradas.find((p) => p.codigoMaquina === codigoMaquina && p.status === 'Ativa');
+    if (maquinaParada) {
+      addNotificacao(
+        `⛔ Máquina ${codigoMaquina} está parada no momento por: ${maquinaParada.motivo}!`,
+        'error'
+      );
+      return;
+    }
+
+    const op = ordens.find((o) => o.id === numOp);
+    if (!op) {
+      addNotificacao('Ordem de Produção não encontrada.', 'error');
+      return;
+    }
+
+    const etapa = op.etapas?.find((e) => e.numeroEtapa === numeroEtapa);
+    const descricao = etapa ? etapa.descricaoEtapa : `Operação Etapa ${numeroEtapa}`;
+
+    // Criar novo apontamento ativo
+    const novoApontamento: ApontamentoMES = {
+      id: Date.now(),
+      numOp,
+      numeroEtapa,
+      descricaoEtapa: descricao,
+      operadorMatricula: operadorAtivo.matricula,
+      operadorNome: operadorAtivo.nome,
+      codigoMaquina,
+      qtdBoas: null, // Ativo
+      refugo: 0,
+      dataHoraInicio: new Date().toISOString(),
+      status: 'Ativo',
+    };
+
+    setApontamentos((prev) => [novoApontamento, ...prev]);
+
+    // Atualizar status da etapa na OP para "Em Execução"
+    setOrdens((prev) =>
+      prev.map((o) => {
+        if (o.id === numOp) {
+          const etapasAtualizadas = o.etapas?.map((e) =>
+            e.numeroEtapa === numeroEtapa ? { ...e, statusExecucao: 'Em Execução' as const } : e
+          );
+          return {
+            ...o,
+            status: o.status === 'planejado' || o.status === 'pendente' ? 'producao' : o.status,
+            etapaAtual: `Etapa ${numeroEtapa} - ${descricao}`,
+            etapas: etapasAtualizadas,
+          };
+        }
+        return o;
+      })
+    );
+
+    addNotificacao(
+      `▶️ Operador ${operadorAtivo.nome} iniciou Etapa ${numeroEtapa} da OP ${numOp} em ${codigoMaquina}`,
+      'success'
+    );
+    registrarAuditoria(
+      'Apontamento Iniciado (MES)',
+      `OP ${numOp} | Etapa ${numeroEtapa} | ${codigoMaquina} | Operador: ${operadorAtivo.nome} (#${operadorAtivo.matricula})`
+    );
+  };
+
+  // 2. Fechar Apontamento (Baixar Peças Boas e Refugo)
+  const handleFecharApontamento = (
+    idApontamento: number,
+    qtdBoas: number,
+    refugo: number,
+    motivoRefugo?: string
+  ) => {
+    const ap = apontamentos.find((a) => a.id === idApontamento);
+    if (!ap) return;
+
+    // Atualizar OP e saldo residual da etapa
+    setOrdens((prev) =>
+      prev.map((o) => {
+        if (o.id === ap.numOp) {
+          let etapasAtualizadas = o.etapas || [];
+          if (etapasAtualizadas.length > 0) {
+            etapasAtualizadas = etapasAtualizadas.map((e) => {
+              if (e.numeroEtapa === ap.numeroEtapa) {
+                const novoSaldo = Math.max(0, e.saldoResidual - qtdBoas);
+                return {
+                  ...e,
+                  saldoResidual: novoSaldo,
+                  statusExecucao: novoSaldo === 0 ? ('Concluída' as const) : ('Em Execução' as const),
+                };
+              }
+              return e;
+            });
+          }
+
+          // Calcular progresso real da OP baseado na soma das etapas
+          const totalEtapas = etapasAtualizadas.length;
+          const etapasConcluidas = etapasAtualizadas.filter((e) => e.statusExecucao === 'Concluída').length;
+          const novoProgresso =
+            totalEtapas > 0 ? Math.round((etapasConcluidas / totalEtapas) * 100) : Math.min(100, o.progresso + 20);
+
+          const todasConcluidas = totalEtapas > 0 && etapasConcluidas === totalEtapas;
+          const novoStatus: StatusOrdem = todasConcluidas ? 'concluido' : o.status;
+
+          return {
+            ...o,
+            etapas: etapasAtualizadas,
+            progresso: novoProgresso,
+            status: novoStatus,
+            etapaAtual: todasConcluidas ? 'Concluída e Liberada' : o.etapaAtual,
+          };
+        }
+        return o;
+      })
+    );
+
+    // Fechar registro de apontamento
+    setApontamentos((prev) =>
+      prev.map((a) => {
+        if (a.id === idApontamento) {
+          return {
+            ...a,
+            qtdBoas,
+            refugo,
+            motivoRefugo,
+            dataHoraFim: new Date().toISOString(),
+            status: 'Concluido' as const,
+          };
+        }
+        return a;
+      })
+    );
+
+    addNotificacao(
+      `✅ Apontamento concluído: ${qtdBoas} peças boas apontadas na OP ${ap.numOp}!`,
+      'success'
+    );
+    registrarAuditoria(
+      'Apontamento Finalizado (MES)',
+      `OP ${ap.numOp} | Etapa ${ap.numeroEtapa} | Boas: ${qtdBoas} | Refugo: ${refugo} | Operador: ${operadorAtivo.nome}`
+    );
+  };
+
+  // 3. Registrar Parada de Máquina (Andon)
+  const handleRegistrarParada = (
+    codigoMaquina: string,
+    motivo: ParadaMaquina['motivo'],
+    observacoes?: string
+  ) => {
+    const novaParada: ParadaMaquina = {
+      id: Date.now(),
+      codigoMaquina,
+      operadorMatricula: operadorAtivo.matricula,
+      operadorNome: operadorAtivo.nome,
+      motivo,
+      status: 'Ativa',
+      dataHoraInicio: new Date().toISOString(),
+      observacoes,
+    };
+
+    setParadas((prev) => [novaParada, ...prev]);
+
+    // Marcar máquina como 'Parada'
+    setCentros((prev) =>
+      prev.map((c) =>
+        c.codigo === codigoMaquina
+          ? { ...c, status: 'parado' as const, statusOperacional: 'Parada' as const }
+          : c
+      )
+    );
+
+    addNotificacao(`🚨 Parada acionada em ${codigoMaquina}: ${motivo}`, 'error');
+    registrarAuditoria(
+      'Parada de Máquina Registrada',
+      `Máquina: ${codigoMaquina} | Motivo: ${motivo} | Operador: ${operadorAtivo.nome}`
+    );
+  };
+
+  // 4. Retomar Parada de Máquina
+  const handleRetomarParada = (idParada: number) => {
+    const p = paradas.find((item) => item.id === idParada);
+    if (!p) return;
+
+    setParadas((prev) =>
+      prev.map((item) =>
+        item.id === idParada
+          ? { ...item, status: 'Encerrada' as const, dataHoraFim: new Date().toISOString() }
+          : item
+      )
+    );
+
+    // Retomar máquina como 'Ativa'
+    setCentros((prev) =>
+      prev.map((c) =>
+        c.codigo === p.codigoMaquina
+          ? { ...c, status: 'ativo' as const, statusOperacional: 'Ativa' as const }
+          : c
+      )
+    );
+
+    addNotificacao(`🔧 Produção retomada com sucesso na máquina ${p.codigoMaquina}!`, 'success');
+    registrarAuditoria(
+      'Parada Encerrada / Retomada',
+      `Máquina: ${p.codigoMaquina} restabelecida por ${operadorAtivo.nome}`
+    );
+  };
+
+  // 5. Alternar status direto de máquina
+  const handleAlternarStatusMaquina = (
+    idCentro: number,
+    novoStatus: 'Ativa' | 'Parada' | 'Manutenção'
+  ) => {
+    setCentros((prev) =>
+      prev.map((c) => {
+        if (c.id === idCentro) {
+          const statusLegado =
+            novoStatus === 'Ativa' ? 'ativo' : novoStatus === 'Parada' ? 'parado' : 'manutencao';
+          return { ...c, status: statusLegado, statusOperacional: novoStatus };
+        }
+        return c;
+      })
+    );
+    addNotificacao(`Status da máquina atualizado para ${novoStatus}`, 'success');
+  };
+
+  // ============================================
+  // FUNÇÕES PCP & GESTÃO (APP 1)
+  // ============================================
+
+  // Salvar Ordem de Produção (com criação automática de etapas a partir do roteiro)
   const handleSalvarOrdem = (dados: {
     id?: string;
     produto: string;
@@ -335,15 +634,48 @@ export default function App() {
       addNotificacao(`✏️ Ordem de Produção ${dados.id} atualizada com sucesso!`, 'success');
       registrarAuditoria('OP Atualizada', `${dados.id} - ${dados.produto} (${dados.quantidade} un)`);
     } else {
-      // Nova OP: Gerar ID sequencial
+      // Nova OP: Gerar ID sequencial e desdobrar etapas de roteiro
       const idsNum = ordens.map((o) => parseInt(o.id.replace(/\D/g, '')) || 0);
       const proximoNum = Math.max(0, ...idsNum) + 1;
-      const novoId = `CH-${String(proximoNum).padStart(3, '0')}`;
+      const novoId = `OP-${String(proximoNum).padStart(3, '0')}`;
+
+      // Tentar encontrar roteiro correspondente ao produto
+      const roteiroCorrespondente = roteiros.find(
+        (r) => r.produtoId === dados.produtoId || r.produtoNome.toLowerCase() === dados.produto.toLowerCase()
+      );
+
+      let etapasGeradas: EtapaExecucaoOP[] = [];
+      if (roteiroCorrespondente && roteiroCorrespondente.componentes.length > 0) {
+        let etapaIndex = 10;
+        roteiroCorrespondente.componentes.forEach((comp) => {
+          comp.operacoes.forEach((op) => {
+            etapasGeradas.push({
+              id: Date.now() + etapaIndex,
+              numeroEtapa: etapaIndex,
+              descricaoEtapa: `${comp.nome}: ${op.titulo}`,
+              codigoMaquinaPadrao: op.codigoMaquinaPadrao || 'CNC-01',
+              tempoCicloMinutos: op.tempo || 20,
+              saldoResidual: dados.quantidade,
+              statusExecucao: 'Pendente',
+            });
+            etapaIndex += 10;
+          });
+        });
+      } else {
+        // Roteiro padrão industrial padrão se não houver roteiro específico
+        etapasGeradas = [
+          { id: Date.now() + 10, numeroEtapa: 10, descricaoEtapa: 'Corte e Preparação de Matéria-Prima', codigoMaquinaPadrao: 'SR-01', tempoCicloMinutos: 15, saldoResidual: dados.quantidade, statusExecucao: 'Pendente' },
+          { id: Date.now() + 20, numeroEtapa: 20, descricaoEtapa: 'Torneamento e Mandrilamento de Precisão', codigoMaquinaPadrao: 'TR-01', tempoCicloMinutos: 25, saldoResidual: dados.quantidade, statusExecucao: 'Pendente' },
+          { id: Date.now() + 30, numeroEtapa: 30, descricaoEtapa: 'Usinagem CNC de Canais e Roscas', codigoMaquinaPadrao: 'CNC-01', tempoCicloMinutos: 20, saldoResidual: dados.quantidade, statusExecucao: 'Pendente' },
+          { id: Date.now() + 40, numeroEtapa: 40, descricaoEtapa: 'Montagem Hidráulica e Teste de Estanqueidade', codigoMaquinaPadrao: 'TST-01', tempoCicloMinutos: 30, saldoResidual: dados.quantidade, statusExecucao: 'Pendente' },
+        ];
+      }
 
       const novaOp: OrdemProducao = {
         id: novoId,
         produto: dados.produto,
         produtoId: dados.produtoId,
+        numeroDesenho: `DES-${String(proximoNum).padStart(3, '0')}`,
         serie: dados.serie || 'Série Padrão',
         quantidade: dados.quantidade,
         dataInicio: dados.dataInicio,
@@ -353,12 +685,19 @@ export default function App() {
         operador: dados.operador,
         prioridade: dados.prioridade,
         observacoes: dados.observacoes,
-        etapaAtual: 'Início de fabricação / PCP',
+        etapaAtual: `Etapa ${etapasGeradas[0]?.numeroEtapa || 10} - ${etapasGeradas[0]?.descricaoEtapa || 'Planejada'}`,
+        etapas: etapasGeradas,
       };
 
       setOrdens((prev) => [novaOp, ...prev]);
-      addNotificacao(`✅ Nova Ordem de Produção ${novoId} criada para "${dados.produto}"!`, 'success');
-      registrarAuditoria('Nova OP Criada', `${novoId} - ${dados.produto} (${dados.quantidade} un)`);
+      addNotificacao(
+        `✅ Nova Ordem de Produção ${novoId} criada com ${etapasGeradas.length} etapas no roteiro!`,
+        'success'
+      );
+      registrarAuditoria(
+        'Nova OP Criada',
+        `${novoId} - ${dados.produto} (${dados.quantidade} un) com ${etapasGeradas.length} etapas`
+      );
     }
   };
 
@@ -389,9 +728,20 @@ export default function App() {
     setOrdens((prev) =>
       prev.map((o) => {
         if (o.id === id) {
+          const etapasConcluidas = o.etapas?.map((e) => ({
+            ...e,
+            saldoResidual: 0,
+            statusExecucao: 'Concluída' as const,
+          }));
           addNotificacao(`🎉 Ordem ${o.id} concluída com sucesso!`, 'success');
           registrarAuditoria('OP Finalizada', `${o.id} - ${o.produto}`);
-          return { ...o, progresso: 100, status: 'concluido' as StatusOrdem, etapaAtual: 'Concluída e Liberada' };
+          return {
+            ...o,
+            progresso: 100,
+            status: 'concluido' as StatusOrdem,
+            etapaAtual: 'Concluída e Liberada',
+            etapas: etapasConcluidas,
+          };
         }
         return o;
       })
@@ -420,7 +770,7 @@ export default function App() {
     );
   };
 
-  // 2. Produtos do Catálogo
+  // Produtos
   const handleSalvarProduto = (dados: {
     id?: number;
     nome: string;
@@ -440,12 +790,13 @@ export default function App() {
         id: novoId,
         nome: dados.nome,
         codigo: dados.codigo,
+        numeroDesenho: `DES-${String(novoId).padStart(3, '0')}`,
         categoria: dados.categoria,
         spec: dados.spec,
         ativo: true,
       };
       setProdutos((prev) => [...prev, novoProduto]);
-      addNotificacao(`✅ Produto "${dados.nome}" cadastrado com sucesso! Já disponível para novas OPs.`, 'success');
+      addNotificacao(`✅ Produto "${dados.nome}" cadastrado com sucesso!`, 'success');
       registrarAuditoria('Novo Produto Cadastrado', `${dados.nome} (${dados.codigo})`);
     }
   };
@@ -453,13 +804,13 @@ export default function App() {
   const handleExcluirProduto = (id: number) => {
     const prod = produtos.find((p) => p.id === id);
     if (!prod) return;
-    if (!confirm(`Deseja excluir o produto "${prod.nome}"? As OPs existentes vinculadas a ele serão preservadas.`)) return;
+    if (!confirm(`Deseja excluir o produto "${prod.nome}"?`)) return;
     setProdutos((prev) => prev.filter((p) => p.id !== id));
     addNotificacao(`🗑️ Produto "${prod.nome}" excluído do catálogo!`, 'warning');
     registrarAuditoria('Produto Excluído', prod.nome);
   };
 
-  // 3. Ordens de Serviço (OS)
+  // Ordens de Serviço (OS)
   const handleSalvarOS = (dados: {
     id?: string;
     cliente: string;
@@ -504,7 +855,7 @@ export default function App() {
     registrarAuditoria('OS Excluída', id);
   };
 
-  // 4. Roteiro & Componentes & Operações
+  // Roteiros
   const handleSalvarRoteiroProduto = (produtoId: number, produtoNome: string) => {
     const novoRoteiro: RoteiroProduto = {
       id: Date.now(),
@@ -515,7 +866,7 @@ export default function App() {
           id: Date.now() + 1,
           nome: 'Componente Principal',
           operacoes: [
-            { id: Date.now() + 2, titulo: 'Corte e Preparação', centro: 'Corte', tempo: 15 },
+            { id: Date.now() + 2, titulo: 'Corte e Preparação', centro: 'Corte', codigoMaquinaPadrao: 'SR-01', tempo: 15 },
           ],
         },
       ],
@@ -540,7 +891,6 @@ export default function App() {
       })
     );
     addNotificacao(`✅ Componente "${nomeComponente}" adicionado ao roteiro!`, 'success');
-    registrarAuditoria('Componente Roteiro Criado', nomeComponente);
   };
 
   const handleSalvarOperacao = (dados: {
@@ -558,7 +908,6 @@ export default function App() {
           const comps = r.componentes.map((c) => {
             if (c.id === dados.componenteId) {
               if (dados.operacaoId) {
-                // Editar operação existente
                 const ops = c.operacoes.map((op) =>
                   op.id === dados.operacaoId
                     ? { ...op, titulo: dados.titulo, descricao: dados.descricao, centro: dados.centro, tempo: dados.tempo }
@@ -566,7 +915,6 @@ export default function App() {
                 );
                 return { ...c, operacoes: ops };
               } else {
-                // Nova operação
                 const novaOp = {
                   id: Date.now(),
                   titulo: dados.titulo,
@@ -585,7 +933,6 @@ export default function App() {
       })
     );
     addNotificacao(`⚙️ Operação "${dados.titulo}" salva no roteiro!`, 'success');
-    registrarAuditoria('Operação Roteiro Salva', `${dados.titulo} (${dados.centro})`);
   };
 
   const handleExcluirOperacao = (roteiroId: number, componenteId: number, operacaoId: number) => {
@@ -626,7 +973,7 @@ export default function App() {
     addNotificacao('🗑️ Roteiro do produto excluído!', 'warning');
   };
 
-  // 5. BoMs
+  // BoMs
   const handleSalvarBom = (dados: { id?: number; nome: string; componentes: string[] }) => {
     if (dados.id) {
       setBoms((prev) => prev.map((b) => (b.id === dados.id ? { ...b, ...dados } : b)));
@@ -642,26 +989,35 @@ export default function App() {
     }
   };
 
-  // 6. Centros de Trabalho
-  const handleSalvarCentro = (dados: { id?: number; nome: string; capacidade: number; eficiencia: number; operador: string }) => {
+  // Centros de Trabalho
+  const handleSalvarCentro = (dados: {
+    id?: number;
+    nome: string;
+    capacidade: number;
+    eficiencia: number;
+    operador: string;
+  }) => {
     if (dados.id) {
       setCentros((prev) => prev.map((c) => (c.id === dados.id ? { ...c, ...dados } : c)));
       addNotificacao(`✏️ Centro "${dados.nome}" atualizado!`, 'success');
     } else {
+      const codigoGerado = `M-${String(centros.length + 1).padStart(2, '0')}`;
       const novoCentro: CentroTrabalho = {
         id: Date.now(),
+        codigo: codigoGerado,
         nome: dados.nome,
         capacidade: dados.capacidade,
         eficiencia: dados.eficiencia,
         operador: dados.operador,
         status: 'ativo',
+        statusOperacional: 'Ativa',
       };
       setCentros((prev) => [...prev, novoCentro]);
-      addNotificacao(`✅ Novo centro "${dados.nome}" cadastrado!`, 'success');
+      addNotificacao(`✅ Novo centro "${dados.nome}" cadastrado com código ${codigoGerado}!`, 'success');
     }
   };
 
-  // 7. Qualidade
+  // Qualidade
   const handleSalvarInspecao = (dados: {
     id?: number;
     produto: string;
@@ -687,7 +1043,7 @@ export default function App() {
     }
   };
 
-  // 8. Estoque
+  // Estoque
   const handleSalvarMaterial = (dados: {
     id?: number;
     nome: string;
@@ -732,11 +1088,11 @@ export default function App() {
     );
   };
 
-  // Backup & Reset
+  // Backup & Reset Completo
   const handleBackup = () => {
     try {
       const backupDados = {
-        versao: '5.1',
+        versao: '6.0 - MES & PCP Unificados',
         dataExportacao: new Date().toISOString(),
         produtos,
         ordens,
@@ -747,15 +1103,18 @@ export default function App() {
         inspecoes,
         materiais,
         auditLog,
+        operadores,
+        apontamentos,
+        paradas,
       };
       const blob = new Blob([JSON.stringify(backupDados, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `backup_fabrica_pro_${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `backup_fabrica_pro_mes_${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      addNotificacao('💾 Backup do banco de dados exportado com sucesso!', 'success');
+      addNotificacao('💾 Backup do banco de dados completo exportado com sucesso!', 'success');
     } catch (e) {
       addNotificacao('Erro ao exportar backup', 'error');
     }
@@ -773,6 +1132,10 @@ export default function App() {
       if (parsed.inspecoes) setInspecoes(parsed.inspecoes);
       if (parsed.materiais) setMateriais(parsed.materiais);
       if (parsed.auditLog) setAuditLog(parsed.auditLog);
+      if (parsed.operadores) setOperadores(parsed.operadores);
+      if (parsed.apontamentos) setApontamentos(parsed.apontamentos);
+      if (parsed.paradas) setParadas(parsed.paradas);
+
       addNotificacao('🎉 Backup importado com sucesso!', 'success');
       registrarAuditoria('Restauração de Backup', 'Dados carregados de arquivo JSON');
     } catch (e) {
@@ -792,6 +1155,9 @@ export default function App() {
     setInspecoes(INSPECOES_INICIAIS);
     setMateriais(MATERIAIS_INICIAIS);
     setAuditLog(AUDIT_INICIAL);
+    setOperadores(OPERADORES_INICIAIS);
+    setApontamentos(APONTAMENTOS_INICIAIS);
+    setParadas(PARADAS_INICIAIS);
     addNotificacao('🔄 Dados restaurados para os valores padrão de fábrica!', 'warning');
     registrarAuditoria('Reset de Dados', 'Padrões de fábrica restabelecidos');
   };
@@ -801,6 +1167,9 @@ export default function App() {
     (acc, r) => acc + r.componentes.reduce((acc2, c) => acc2 + c.operacoes.length, 0),
     0
   );
+
+  const paradasAtivasCount = paradas.filter((p) => p.status === 'Ativa').length;
+  const atividadesAtivasCount = apontamentos.filter((a) => a.status === 'Ativo').length;
 
   const contadoresSidebar = {
     kanban: ordens.length,
@@ -812,6 +1181,8 @@ export default function App() {
     produtos: produtos.length,
     qualidade: inspecoes.length,
     estoque: materiais.length,
+    atividadesAtivas: atividadesAtivasCount,
+    paradasAtivas: paradasAtivasCount,
   };
 
   return (
@@ -837,7 +1208,7 @@ export default function App() {
         ))}
       </div>
 
-      {/* Topbar Fixa */}
+      {/* Topbar Fixa com Indicador de Parada e Chão de Fábrica */}
       <Topbar
         usuario={usuario}
         temaEscuro={temaEscuro}
@@ -853,6 +1224,7 @@ export default function App() {
         }}
         onAbrirAjuda={() => setModalAjudaOpen(true)}
         onNavegar={setPaginaAtiva}
+        paradasAtivasCount={paradasAtivasCount}
       />
 
       {/* Corpo Principal com Sidebar + Área de Conteúdo */}
@@ -864,7 +1236,7 @@ export default function App() {
           onCloseMobile={() => setSidebarMobileOpen(false)}
           usuario={usuario}
           onLogout={() => {
-            addNotificacao('Sessão encerrada com sucesso.', 'warning');
+            addNotificacao('Sessão alterada para modo visitante.', 'warning');
             setPaginaAtiva('config');
           }}
           contadores={contadoresSidebar}
@@ -873,12 +1245,37 @@ export default function App() {
         {/* Área Central da Página */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto">
+            {/* Visualização 1: Terminal do Operador (MES - Fusão App 2) */}
+            {paginaAtiva === 'terminal-operador' && (
+              <TerminalOperadorView
+                ordens={ordens}
+                centros={centros}
+                operadores={operadores}
+                apontamentos={apontamentos}
+                paradas={paradas}
+                operadorAtivo={operadorAtivo}
+                onMudarOperador={setOperadorAtivo}
+                onIniciarProducao={handleIniciarProducao}
+                onFecharApontamento={handleFecharApontamento}
+                onRegistrarParada={handleRegistrarParada}
+                onRetomarParada={handleRetomarParada}
+              />
+            )}
+
+            {/* Visualização 2: Consulta de OP & Ficha de Impressão (MES - Fusão App 2) */}
+            {paginaAtiva === 'consulta-op' && (
+              <ConsultaOPView ordens={ordens} apontamentos={apontamentos} />
+            )}
+
+            {/* Visualização 3: Dashboard Geral (PCP & MES) */}
             {paginaAtiva === 'dashboard' && (
               <DashboardView
                 ordens={ordens}
                 centros={centros}
                 materiais={materiais}
                 auditLog={auditLog}
+                apontamentos={apontamentos}
+                paradas={paradas}
                 onAbrirNovaOrdem={() => {
                   setOrdemParaEditar(null);
                   setModalNovaOrdemOpen(true);
@@ -889,6 +1286,7 @@ export default function App() {
               />
             )}
 
+            {/* Visualização 4: Kanban */}
             {paginaAtiva === 'kanban' && (
               <KanbanView
                 ordens={ordens}
@@ -907,6 +1305,7 @@ export default function App() {
               />
             )}
 
+            {/* Visualização 5: Produção (Lista de OPs) */}
             {paginaAtiva === 'producao' && (
               <ProducaoView
                 ordens={ordens}
@@ -925,9 +1324,16 @@ export default function App() {
                 onVerRoteiroProduto={() => {
                   setPaginaAtiva('roteiro');
                 }}
+                onConsultarOP={() => {
+                  setPaginaAtiva('consulta-op');
+                }}
+                onApontarTerminal={() => {
+                  setPaginaAtiva('terminal-operador');
+                }}
               />
             )}
 
+            {/* Visualização 6: Ordens de Serviço (OS) */}
             {paginaAtiva === 'ordens' && (
               <OrdensServicoView
                 ordensServico={ordensServico}
@@ -944,6 +1350,7 @@ export default function App() {
               />
             )}
 
+            {/* Visualização 7: Roteiros de Fabricação */}
             {paginaAtiva === 'roteiro' && (
               <RoteiroView
                 roteiros={roteiros}
@@ -967,6 +1374,7 @@ export default function App() {
               />
             )}
 
+            {/* Visualização 8: Catálogo de Produtos e Desenhos */}
             {paginaAtiva === 'produtos' && (
               <ProdutosView
                 produtos={produtos}
@@ -979,13 +1387,14 @@ export default function App() {
                   setModalNovoProdutoOpen(true);
                 }}
                 onExcluirProduto={handleExcluirProduto}
-                onCriarOpDoProduto={(prodNome) => {
+                onCriarOpDoProduto={() => {
                   setOrdemParaEditar(null);
                   setModalNovaOrdemOpen(true);
                 }}
               />
             )}
 
+            {/* Visualização 9: BoM (Estruturas) */}
             {paginaAtiva === 'bom' && (
               <BomView
                 boms={boms}
@@ -1006,9 +1415,11 @@ export default function App() {
               />
             )}
 
+            {/* Visualização 10: Centros de Trabalho & Máquinas */}
             {paginaAtiva === 'workcenters' && (
               <WorkcentersView
                 centros={centros}
+                paradas={paradas}
                 onAbrirNovoCentro={() => {
                   setCentroParaEditar(null);
                   setModalNovoCentroOpen(true);
@@ -1023,9 +1434,11 @@ export default function App() {
                     addNotificacao('🗑️ Centro excluído!', 'warning');
                   }
                 }}
+                onAlternarStatus={handleAlternarStatusMaquina}
               />
             )}
 
+            {/* Visualização 11: Controle de Qualidade */}
             {paginaAtiva === 'qualidade' && (
               <QualidadeView
                 inspecoes={inspecoes}
@@ -1046,6 +1459,7 @@ export default function App() {
               />
             )}
 
+            {/* Visualização 12: Estoque & Almoxarifado */}
             {paginaAtiva === 'estoque' && (
               <EstoqueView
                 materiais={materiais}
@@ -1067,6 +1481,7 @@ export default function App() {
               />
             )}
 
+            {/* Visualização 13: Histórico & Auditoria */}
             {paginaAtiva === 'historico' && (
               <HistoricoView
                 auditLog={auditLog}
@@ -1080,6 +1495,7 @@ export default function App() {
               />
             )}
 
+            {/* Visualização 14: Configurações & Backup */}
             {paginaAtiva === 'config' && (
               <ConfigView
                 usuario={usuario}
@@ -1102,7 +1518,7 @@ export default function App() {
       {/* MODAIS DO SISTEMA */}
       {/* ======================================================== */}
 
-      {/* 1. Modal Nova Ordem de Produção (com seletor dinâmico de produtos) */}
+      {/* 1. Modal Nova Ordem de Produção */}
       <ModalNovaOrdem
         isOpen={modalNovaOrdemOpen}
         onClose={() => setModalNovaOrdemOpen(false)}
@@ -1212,39 +1628,55 @@ export default function App() {
           >
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
               <h2 className="text-base font-bold flex items-center gap-2">
-                <HelpCircle className="w-5 h-5 text-amber-600" />
-                Guia Rápido - Sistema Fábrica PRO v5.1
+                <HelpCircle className="w-5 h-5 text-amber-500" />
+                <span>Sistema Fábrica PRO • MES & PCP Integrado</span>
               </h2>
               <button
+                type="button"
                 onClick={() => setModalAjudaOpen(false)}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
                 ✕
               </button>
             </div>
-            <div className="py-4 space-y-3 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-              <p>
-                <strong>1. Criar OPs com novos produtos:</strong> Agora o seletor de produtos nas telas de <em>Nova Ordem de Produção (OP)</em> e <em>Nova Ordem de Serviço (OS)</em> sincroniza automaticamente todos os produtos cadastrados na aba <strong>Produtos</strong> (como <em>Guindaste</em>, <em>Filetadora 100</em>, etc.), além de permitir cadastrar um produto novo diretamente pelo botão rápido <em>+ Cadastrar Novo Produto</em> dentro do modal.
-              </p>
-              <p>
-                <strong>2. Kanban & Produção:</strong> Arraste cartões entre as colunas ou use o botão <em>Avançar Etapa (+15%)</em> para apontar a fabricação em tempo real.
-              </p>
-              <p>
-                <strong>3. Engenharia de Roteiro:</strong> Vincule operações específicas (Corte, Torno CNC, Mandrilamento, Solda) aos produtos e componentes cadastrados.
-              </p>
-              <p>
-                <strong>4. Relatórios PDF:</strong> Exporte relatórios formais da produção, ordens de serviço e auditoria com um clique.
-              </p>
-              <p>
-                <strong>5. Licença Vitalícia PRO:</strong> O bloqueio temporário de 7 dias foi desativado e o sistema opera com licença completa e irrestrita.
-              </p>
+
+            <div className="mt-4 space-y-3 text-xs leading-relaxed text-slate-600 dark:text-slate-300 max-h-[70vh] overflow-y-auto pr-1">
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-lg border border-amber-200 dark:border-amber-900/50">
+                <h4 className="font-bold text-amber-900 dark:text-amber-200 mb-1">
+                  🏭 O que é esta versão fundida?
+                </h4>
+                <p>
+                  Unificação completa do sistema de PCP & Engenharia com o sistema MES (Manufacturing Execution System) de chão de fábrica.
+                </p>
+              </div>
+
+              <h4 className="font-bold text-slate-800 dark:text-slate-100">Principais Recursos:</h4>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>
+                  <strong>🧑‍🔧 Terminal Operador (MES):</strong> Apontamento direto pelo operador com cronômetro ao vivo, registro de peças boas e refugos com controle rígido de saldo residual.
+                </li>
+                <li>
+                  <strong>🚨 Gestão de Paradas (Andon):</strong> Acionamento de interrupção de máquinas (Setup, Falta de Matéria-Prima, Quebra) com alteração do status e retomada assistida.
+                </li>
+                <li>
+                  <strong>🔍 Consulta & Ficha de OP:</strong> Rastreabilidade ponta a ponta com visualização e impressão da ficha de processo física para acompanhar o lote na fábrica.
+                </li>
+                <li>
+                  <strong>📊 OEE Global Dinâmico:</strong> Indicador Overall Equipment Effectiveness calculado a partir da disponibilidade de máquinas, performance e taxa de refugo.
+                </li>
+                <li>
+                  <strong>📋 PCP & Engenharia:</strong> Catálogo de produtos, desenho técnico, roteiro com múltiplos componentes e operações, e árvore de materiais (BoM).
+                </li>
+              </ul>
             </div>
-            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end">
+
+            <div className="mt-5 pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end">
               <button
+                type="button"
                 onClick={() => setModalAjudaOpen(false)}
-                className="px-4 py-1.5 bg-slate-800 dark:bg-amber-600 text-white rounded-lg text-xs font-bold"
+                className="px-4 py-2 bg-slate-800 dark:bg-amber-600 text-white rounded-lg text-xs font-semibold hover:bg-slate-700 cursor-pointer"
               >
-                Entendi
+                Fechar Guia
               </button>
             </div>
           </div>

@@ -5,9 +5,19 @@ export interface Produto {
   id: number;
   nome: string;
   codigo: string;
+  numeroDesenho?: string;
   categoria?: string;
   spec?: string;
   ativo?: boolean;
+}
+
+export interface OperadorMES {
+  matricula: string; // Ex: '1024'
+  nome: string;
+  turno: 'Turno A' | 'Turno B' | 'Turno C';
+  senha?: string;
+  ativo: boolean;
+  avatar?: string;
 }
 
 export interface OperacaoRoteiro {
@@ -15,6 +25,7 @@ export interface OperacaoRoteiro {
   titulo: string;
   descricao?: string;
   centro: string;
+  codigoMaquinaPadrao?: string;
   tempo: number; // minutos
   concluida?: boolean;
 }
@@ -29,13 +40,59 @@ export interface RoteiroProduto {
   id: number;
   produtoId: number;
   produtoNome: string;
+  numeroDesenho?: string;
   componentes: ComponenteRoteiro[];
 }
 
+export interface EtapaExecucaoOP {
+  id: number;
+  numeroEtapa: number; // 10, 20, 30...
+  descricaoEtapa: string;
+  codigoMaquinaPadrao: string;
+  tempoCicloMinutos: number;
+  saldoResidual: number;
+  statusExecucao: 'Pendente' | 'Em Execução' | 'Concluída';
+}
+
+export interface ApontamentoMES {
+  id: number;
+  numOp: string;
+  numeroEtapa: number;
+  descricaoEtapa: string;
+  operadorMatricula: string;
+  operadorNome: string;
+  codigoMaquina: string;
+  qtdBoas: number | null; // null enquanto estiver em andamento (Ativo)
+  refugo: number;
+  motivoRefugo?: string;
+  dataHoraInicio: string; // ISO string
+  dataHoraFim?: string;
+  status: 'Ativo' | 'Concluido';
+}
+
+export interface ParadaMaquina {
+  id: number;
+  codigoMaquina: string;
+  operadorMatricula: string;
+  operadorNome: string;
+  motivo:
+    | 'Falta de Matéria-Prima'
+    | 'Quebra de Ferramenta / Componente'
+    | 'Setup / Troca de Dispositivo'
+    | 'Manutenção Preventiva'
+    | 'Aguardando Inspeção de Qualidade'
+    | 'Outro';
+  status: 'Ativa' | 'Encerrada';
+  dataHoraInicio: string;
+  dataHoraFim?: string;
+  observacoes?: string;
+}
+
 export interface OrdemProducao {
-  id: string; // Ex: CH-001
+  id: string; // Ex: CH-001 ou OP-001
   produto: string;
   produtoId?: number;
+  numeroDesenho?: string;
   serie: string;
   quantidade: number;
   dataInicio: string;
@@ -46,6 +103,7 @@ export interface OrdemProducao {
   prioridade?: PrioridadeOrdem;
   observacoes?: string;
   etapaAtual?: string;
+  etapas?: EtapaExecucaoOP[];
 }
 
 export interface OrdemServico {
@@ -69,18 +127,24 @@ export interface BoM {
 
 export interface CentroTrabalho {
   id: number;
+  codigo: string; // Ex: TR-01, CNC-01, SR-01
   nome: string;
   capacidade: number; // pecas/dia
   eficiencia: number; // %
   operador: string;
-  status?: 'ativo' | 'manutencao' | 'parado';
+  status: 'ativo' | 'manutencao' | 'parado';
+  statusOperacional?: 'Ativa' | 'Parada' | 'Manutenção';
 }
 
 export interface InspecaoQualidade {
   id: number;
   produto: string;
+  numOp?: string;
   tipo: 'Hidráulico' | 'Dimensional' | 'Visual' | 'Funcional';
   resultado: 'aprovado' | 'reprovado' | 'pendente';
+  pressaoEnsaioBar?: number;
+  tempoSustentacaoMin?: number;
+  estanqueidade?: 'Sem vazamento' | 'Gotejamento' | 'Falha de vedação';
   observacoes?: string;
   data?: string;
   inspetor?: string;
@@ -107,5 +171,7 @@ export interface LogAuditoria {
 export interface UsuarioApp {
   username: string;
   name: string;
-  role: 'admin' | 'engenheiro' | 'producao';
+  matricula?: string;
+  role: 'admin' | 'engenheiro' | 'producao' | 'operador';
+  turno?: string;
 }
